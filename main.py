@@ -1,5 +1,7 @@
 from algorithms.genetic_algorithm import GeneticAlgorithm
+from algorithms.lagrangian_heuristics import LagrangianHeuristics  # , Test
 from algorithms.simulated_annealing import SimulatedAnnealing
+
 from services.generation import GenerateMap, MAP_SIZE, Test
 
 # # Generation
@@ -14,15 +16,21 @@ from services.generation import GenerateMap, MAP_SIZE, Test
 FILE = 'tests/test_50_30_20.txt'
 COUNT_CHROMOSOMES = 20
 COUNT_ITERATION = 100
-
+#
 test = Test()
 test.load(FILE)
 
-# genetic_alg = GeneticAlgorithm(test)
-# genetic_alg.start(COUNT_CHROMOSOMES, 50, count_iteration=COUNT_ITERATION,
-#                   consistency_of_result=30)
+genetic_alg = GeneticAlgorithm(test)
+print(genetic_alg.name, '*',
+      genetic_alg.start(COUNT_CHROMOSOMES, 50, count_iteration=COUNT_ITERATION, consistency_of_result=30,
+                        visualization=False))
 
 INITIAL_TEMPERATURE = 1000
 
 simulated_annealing = SimulatedAnnealing(test)
-simulated_annealing.start(INITIAL_TEMPERATURE, count_iteration=COUNT_ITERATION, visualization=False)
+print(simulated_annealing.name, '*',
+      simulated_annealing.start(INITIAL_TEMPERATURE, count_iteration=100, visualization=False))
+
+# test = Test([2, 3, 4, 5], [[1, 0, 1, 0], [1, 0, 0, 1], [0, 1, 1, 1]], 4, 3)
+lag = LagrangianHeuristics(test)
+print(lag.name, '*', lag.start(100, visualization=False))

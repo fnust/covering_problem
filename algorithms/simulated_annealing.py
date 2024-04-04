@@ -1,6 +1,9 @@
 import math
 from math import exp
 from random import randint, choice, random
+
+from tqdm import tqdm
+
 from services.generation import Test
 from services.visualization import Video, IMAGE_SIZE
 
@@ -13,15 +16,16 @@ class SimulatedAnnealing:
         self.test = test
 
     def start(self, initial_temperature: int, visualization: bool = True, count_iteration: int = 10000,
-              consistency_of_result: int = 10000) -> None:
+              consistency_of_result: int = 10000) -> int:
         count_result_repetitions = 0
         masks = []
         count = 0
         self.temperature = initial_temperature
 
         self.__create_condition()
+        pbar = tqdm(total=count_iteration, colour='GREEN')
         while count < count_iteration and count_result_repetitions < consistency_of_result:
-            print(f'------- {self.name}: {int(count / count_iteration * 100)}% -------')
+            pbar.update(1)
             old_result = self.__value_of_energy(self.condition)
             new_condition = self.__change_condition()
             delta = self.__value_of_energy(new_condition) - self.__value_of_energy(self.condition)
@@ -41,8 +45,8 @@ class SimulatedAnnealing:
                          f'{count_iteration}_{consistency_of_result}')
             video = Video(IMAGE_SIZE, self.test)
             video.create_video(masks, file_name)
-        print(f'------- {self.name}: 100% -------')
-        print(f'{self.name}: {self.__value_of_energy(masks[-1])}')
+        pbar.close()
+        return self.__value_of_energy(masks[-1])
 
     def __create_condition(self) -> None:
         condition = [randint(0, 1) for _ in range(self.test.count_covering_objects)]
@@ -58,38 +62,52 @@ class SimulatedAnnealing:
 
     def __change_condition(self) -> list:
         new_condition = self.condition.copy()
+        weights = []
+        all_weight = 0
+        for j in range(self.test.count_covering_objects):
+            weight = self.__value_of_object(j)
+            all_weight += weight
+            weights.append(weight)
+
+        proportion = [0]
+        for weight in weights:
+            proportion.append(proportion[-1] + weight / all_weight)
+        proportion[-1] = 1
         probability = random()
+        for i in range(1, self.test.count_covering_objects + 1):
+            if probability < proportion[i]:
+                new_condition[i - 1] = 0
+                break
+        # if probability < 0.4:
+        #     objects = sorted(list(range(self.test.count_covering_objects)),
+        #                   key=lambda x: self.test.covering_objects_costs[x])[self.test.count_covering_objects // 2:]
+        #     position = choice(objects)
+        #     objects.remove(position)
+        #     while len(objects) != 0 and new_condition[position] == 1:
+        #         position = choice(objects)
+        #         objects.remove(position)
+        #
+        #     new_condition[position] = 0
+        # elif probability < 0.8:
+        #     objects = sorted(list(range(self.test.count_covering_objects)),
+        #                      key=lambda x: len([1 for i in self.test.coverage_array if i[x] == 1]))[
+        #               :self.test.count_covering_objects // 2]
+        #     position = choice(objects)
+        #     objects.remove(position)
+        #     while len(objects) != 0 and new_condition[position] == 1:
+        #         position = choice(objects)
+        #         objects.remove(position)
+        #
+        #     new_condition[position] = 0
+        # else:
+        #     objects = list(range(self.test.count_covering_objects))
+        #     position = choice(objects)
+        #     objects.remove(position)
+        #     while len(objects) != 0 and new_condition[position] == 0:
+        #         position = choice(objects)
+        #         objects.remove(position)
 
-        if probability < 0.4:
-            objects = sorted(list(range(self.test.count_covering_objects)),
-                             key=lambda x: self.test.covering_objects_costs[x])[self.test.count_covering_objects // 2:]
-            position = choice(objects)
-            objects.remove(position)
-            while len(objects) != 0 and new_condition[position] == 1:
-                position = choice(objects)
-                objects.remove(position)
-
-            new_condition[position] = 0
-        elif probability < 0.8:
-            objects = sorted(list(range(self.test.count_covering_objects)),
-                             key=lambda x: len([1 for i in self.test.coverage_array if i[x] == 1]))[
-                      :self.test.count_covering_objects // 2]
-            position = choice(objects)
-            objects.remove(position)
-            while len(objects) != 0 and new_condition[position] == 1:
-                position = choice(objects)
-                objects.remove(position)
-
-            new_condition[position] = 0
-        else:
-            objects = list(range(self.test.count_covering_objects))
-            position = choice(objects)
-            objects.remove(position)
-            while len(objects) != 0 and new_condition[position] == 0:
-                position = choice(objects)
-                objects.remove(position)
-
-            new_condition[position] = 0
+        #     new_condition[position] = 0
 
         # position_1 = randint(0, self.test.count_covering_objects - 1)
         # position_2 = randint(0, self.test.count_covering_objects - 1)
@@ -99,10 +117,6 @@ class SimulatedAnnealing:
             new_condition[position] = 1
 
         return new_condition
-
-    def __sort_by_service(self):
-
-        return
 
     def __value_of_energy(self, condition: list) -> int:
         return sum([a * b for a, b in zip(condition, self.test.covering_objects_costs)])
@@ -114,9 +128,10 @@ class SimulatedAnnealing:
 
     def __probability_of_acceptance(self, delta: int) -> bool:
         probability = random()
-        print(delta, self.temperature)
-        print(exp(delta / self.temperature))
         if self.temperature != 0:
             return probability < exp(delta / self.temperature)
         else:
             return False
+
+    def __value_of_object(self, j):
+        return self.test.covering_objects_costs[j] / sum([1 for obj in self.test.coverage_array if obj[j] == 1])
