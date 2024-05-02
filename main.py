@@ -22,14 +22,15 @@ test.load(FILE)
 
 genetic_alg = GeneticAlgorithm(test)
 print(genetic_alg.name, '*',
-      genetic_alg.start(COUNT_CHROMOSOMES, 50, count_iteration=COUNT_ITERATION, consistency_of_result=30,
-                        visualization=False))
+      genetic_alg.start(COUNT_CHROMOSOMES, 0.5, count_iteration=COUNT_ITERATION, consistency_of_result=30,
+                        visualization=False, crossover_percentage=(25, 25, 25, 25), selection_percentage=(20, 20, 60),
+                        fine_rules=(2000, 20)))
 
 INITIAL_TEMPERATURE = 1000
 
 simulated_annealing = SimulatedAnnealing(test)
 print(simulated_annealing.name, '*',
-      simulated_annealing.start(INITIAL_TEMPERATURE, count_iteration=100, visualization=False))
+      simulated_annealing.start(INITIAL_TEMPERATURE, count_iteration=400, visualization=False))
 
 # test = Test([2, 3, 4, 5], [[1, 0, 1, 0], [1, 0, 0, 1], [0, 1, 1, 1]], 4, 3)
 lag = LagrangianHeuristics(test)

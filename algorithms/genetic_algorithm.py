@@ -6,153 +6,187 @@ from services.generation import Test
 from services.visualization import Video, IMAGE_SIZE
 
 
+class Chromosome:
+    def __init__(self, genes: list | tuple, fitness_function_value: int, allowable: bool = True):
+        self.genes = tuple(genes)
+        self.fitness_function_value = fitness_function_value
+        self.allowable = allowable
+
+
 class GeneticAlgorithm:
     def __init__(self, test: Test):
         self.name = 'genetic_algorithm'
         self.test = test
         self.count_chromosomes = 0
-        self.generation = list()
+        self.generation: list[Chromosome] = []
 
-    def start(self, count_chromosomes: int, percentage_proportional_selection: int = 0,
-              visualization: bool = True, count_iteration: int = 10000, consistency_of_result: int = 10000) -> int:
+    def start(self, count_chromosomes: int, mutation_frequency: float = 1, selection_percentage: tuple = (0, 0, 100),
+              crossover_percentage: tuple = (0, 100, 0, 0), fine_rules: tuple = (0, 0), visualization: bool = True,
+              count_iteration: int = 10000, consistency_of_result: int = 10000) -> int:
         self.count_chromosomes = count_chromosomes
         selection = Selection(self.test.covering_objects_costs, count_chromosomes)
+        current_selection = selection.random
         crossover = Crossover(self.test)
+        current_crossover = crossover.random
         masks = []
         count_result_repetitions = 0
         count = 0
-        self.__create_chromosomes()
+        result: Chromosome | list = []
+        fine_amount = fine_rules[0]
+        count_of_not_allowable = (fine_rules[1] * self.count_chromosomes) / 100
+        self.__create_chromosomes(fine_amount, count_of_not_allowable)
 
         pbar = tqdm(total=count_iteration, colour='GREEN')
         while count < count_iteration and count_result_repetitions < consistency_of_result:
             pbar.update(1)
-            old_result = selection.elite(self.generation)[0]
-            if count_iteration * (1 - percentage_proportional_selection / 100) > count:
-                self.generation = self.__create_new_generation(crossover.one_point)
-                self.generation = selection.elite(self.generation)[:count_chromosomes]
-            else:
-                self.generation = selection.elite(self.generation)
-                self.generation = self.__create_new_generation(crossover.one_point)
-                self.generation = selection.elite(self.generation)
-            result = selection.elite(self.generation)[0]
+            old_result = result
+            if round(count_iteration * sum(selection_percentage[:1]) / 100) == count:
+                current_selection = selection.proportional
+            if round(count_iteration * sum(selection_percentage[:2]) / 100) == count:
+                current_selection = selection.elite
+
+            if round(count_iteration * sum(crossover_percentage[:1]) / 100) == count:
+                current_crossover = crossover.one_point
+            if round(count_iteration * sum(crossover_percentage[:2]) / 100) == count:
+                current_crossover = crossover.two_point
+            if round(count_iteration * sum(crossover_percentage[:3]) / 100) == count:
+                current_crossover = crossover.uniform
+
+            self.generation = current_selection(self.generation)
+            self.generation = self.__create_new_generation(current_crossover, mutation_frequency, fine_amount,
+                                                           count_of_not_allowable)
+            self.generation = current_selection(self.generation)
+            result = sorted([chromosome for chromosome in self.generation if chromosome.allowable],
+                            key=lambda x: self.calculate_cost(x.genes))[0]
+
             if old_result == result:
                 count_result_repetitions += 1
             else:
                 count_result_repetitions = 0
-            masks.append(result)
+            masks.append(list(result.genes))
             count += 1
 
         if visualization:
-            file_name = (f'{self.name}_{count_chromosomes}_{percentage_proportional_selection}_'
+            file_name = (f'{self.name}_{count_chromosomes}_{str(selection_percentage)}_'
                          f'{count_iteration}_{consistency_of_result}')
             video = Video(IMAGE_SIZE, self.test)
             video.create_video(masks, file_name)
         pbar.close()
-        return selection.calculate_cost(masks[-1])
+        return self.calculate_cost(masks[-1])
 
-    def __create_chromosomes(self):
+    def __create_chromosomes(self, fine_amount, count_of_not_allowable):
         chromosomes = set()
+        count = 0
         while len(chromosomes) < self.count_chromosomes:
-            chromosome = [randint(0, 1) for _ in range(self.test.count_covering_objects)]
-            while (position := self.__check_chromosome(chromosome)) >= 0:
-                chromosome[position] = 1
-            chromosomes.add(tuple(chromosome))
+            genes = [randint(0, 1) for _ in range(self.test.count_covering_objects)]
+            count_fines = 0
+            if fine_amount == 0 or count >= count_of_not_allowable:
+                while (position := self.fix_chromosome(genes)) >= 0:
+                    genes[position] = 1
+            else:
+                count += 1
+                if 1 not in genes:
+                    position = self.fix_chromosome(genes)
+                    genes[position] = 1
+                count_fines = self.calculate_fine(genes)
+            chromosome = Chromosome(genes, self.fitness_function(genes) - count_fines * fine_amount, count_fines == 0)
+            chromosomes.add(chromosome)
         self.generation = list(chromosomes)
-        # self.generation = self.selection.elite(chromosomes)
-        # self.generation = self.selection.proportional(chromosomes)
 
-    def __check_chromosome(self, chromosome):
+    def __create_new_generation(self, crossover, frequency: float, fine_amount: int,
+                                count_of_not_allowable: int) -> list:
+        new_chromosomes = []
+        for i in range(0, self.count_chromosomes, 2):
+            new_chromosomes += crossover(list(self.generation[i].genes), list(self.generation[i + 1].genes))
+        count = 0
+        chromosomes = set(self.generation)
+        for genes in new_chromosomes:
+            probability = random()
+            if probability < frequency:
+                genes = self.__mutation(genes)
+            count_fines = 0
+            if fine_amount == 0 or count >= count_of_not_allowable:
+                while (position := self.fix_chromosome(genes)) >= 0:
+                    genes[position] = 1
+            else:
+                count += 1
+                if 1 not in genes:
+                    position = self.fix_chromosome(genes)
+                    genes[position] = 1
+                count_fines = self.calculate_fine(genes)
+            chromosome = Chromosome(genes, self.fitness_function(genes) - count_fines * fine_amount, count_fines == 0)
+            chromosomes.add(chromosome)
+        return list(chromosomes)
+
+    def __mutation(self, genes: list) -> list:
+        position = randint(0, self.test.count_covering_objects - 1)
+        genes[position] = 1 - genes[position]
+        return genes
+
+    def fix_chromosome(self, genes: list):
         for object_to_be_covered in self.test.coverage_array:
-            if 1 not in [a * b for a, b in zip(chromosome, object_to_be_covered)]:
+            if 1 not in [a * b for a, b in zip(genes, object_to_be_covered)]:
                 return choice([i for i, v in enumerate(object_to_be_covered) if v == 1])
         return -1
 
-    def __create_new_generation(self, crossover) -> list:
-        new_chromosomes = []
-        for i in range(0, self.count_chromosomes, 2):
-            new_chromosomes += crossover(self.generation[i], self.generation[i + 1])
+    def calculate_fine(self, genes: list):
+        count_fines = 0
+        for object_to_be_covered in self.test.coverage_array:
+            if 1 not in [a * b for a, b in zip(genes, object_to_be_covered)]:
+                count_fines += 1
+        return count_fines
 
-        chromosomes = set(self.generation)
-        for chromosome in new_chromosomes:
-            mutating_chromosome = self.__mutation(list(chromosome))
-            while ((position := self.__check_chromosome(mutating_chromosome)) >= 0
-                   or tuple(mutating_chromosome) in chromosomes):
-                mutating_chromosome = self.__mutation(list(mutating_chromosome))
-                mutating_chromosome[position] = 1
-            chromosomes.add(tuple(mutating_chromosome))
+    def calculate_cost(self, genes: list | tuple):
+        return sum([a * b for a, b in zip(genes, self.test.covering_objects_costs)])
 
-        return list(chromosomes)
-
-        # self.generation = self.selection.proportional(chromosomes)
-        # self.generation = self.selection.elite(chromosomes)[:self.count_chromosomes]
-
-    def __crossover(self, parent_1, parent_2):
-        separation = randint(2, self.test.count_covering_objects - 3)
-        new_chromosome_1 = parent_1[:separation] + parent_2[separation:]
-        new_chromosome_2 = parent_2[:separation] + parent_1[separation:]
-
-        return [new_chromosome_1, new_chromosome_2]
-
-    def __mutation(self, chromosome: list) -> list:
-        position = randint(0, self.test.count_covering_objects - 1)
-        chromosome[position] = 1 - chromosome[position]
-        return chromosome
+    def fitness_function(self, genes: list | tuple):
+        return sum(self.test.covering_objects_costs) - self.calculate_cost(genes) + 1
 
 
 class Selection:
     def __init__(self, costs: list[int], count: int):
-        self.costs = costs
         self.max_cost = sum(costs)
         self.count = count
 
-    def calculate_cost(self, chromosome: tuple) -> int:
-        return sum([a * b for a, b in zip(chromosome, self.costs)])
+    def random(self, chromosomes: list[Chromosome]) -> list:
+        new_generation = set()
+        while len(new_generation) < self.count:
+            chromosome = choice(list(chromosomes))
+            if chromosome not in new_generation:
+                new_generation.add(chromosome)
+                chromosomes.remove(chromosome)
+        return list(new_generation)
 
-    def elite(self, chromosomes: list) -> list:
-        return sorted(chromosomes, key=lambda x: self.max_cost - self.calculate_cost(x) + 1, reverse=True)
+    def elite(self, chromosomes: list[Chromosome]) -> list:
+        return sorted(chromosomes, key=lambda x: x.fitness_function_value, reverse=True)[:self.count]
 
-    def proportional(self, chromosomes: list) -> list:
+    def proportional(self, chromosomes: list[Chromosome]) -> list:
         proportion = [0]
         weight = []
-        all_fitness = self.max_cost * len(chromosomes) - sum(
-            [self.calculate_cost(chromosome) for chromosome in chromosomes]) + len(chromosomes)
-        for chromosome in chromosomes:
-            weight.append((self.max_cost - self.calculate_cost(chromosome) + 1) / all_fitness)
+        all_fitness = [chromosome.fitness_function_value for chromosome in chromosomes]
+        min_val = min(all_fitness, key=lambda x: abs(x))
+        all_fitness = [val if val > 0 else min_val for val in all_fitness]
+        sum_fitness = sum(all_fitness)
+        for val in all_fitness:
+            weight.append(val / sum_fitness)
             proportion += [proportion[-1] + weight[-1]]
         proportion[-1] = 1
+        new_generation = list()
 
-        new_generation = []
-
-        while len(set(new_generation)) < self.count:
+        while len(new_generation) < self.count:
             probability = random()
             for i in range(1, len(chromosomes) + 1):
                 if probability < proportion[i]:
-                    if chromosomes[i - 1] not in new_generation:
-                        new_generation.append(chromosomes[i - 1])
+                    new_generation.append(chromosomes[i - 1])
                     break
-
-        # limit = 1
-        # while len(new_generation) < self.count:
-        #     probability = uniform(0, limit)
-        #     for i in range(1, len(chromosomes) + 1):
-        #         if probability < proportion[i]:
-        #             # print(probability, proportion[i] - proportion[i - 1], weight[i - 1])
-        #             new_generation.append(chromosomes[i - 1])
-        #             del proportion[i]
-        #             proportion = proportion[:i] + [x - weight[i - 1] for x in proportion[i:]]
-        #             chromosomes.remove(new_generation[-1])
-        #             del weight[i - 1]
-        #             limit = proportion[-1]
-        #             break
-
-        return new_generation
+        return list(new_generation)
 
 
 class Crossover:
     def __init__(self, test):
         self.test = test
 
-    def one_point(self, parent_1, parent_2):
+    def one_point(self, parent_1, parent_2) -> list:
         separation = randint(2, self.test.count_covering_objects - 3)
         new_chromosome_1 = parent_1[:separation] + parent_2[separation:]
         new_chromosome_2 = parent_2[:separation] + parent_1[separation:]
@@ -161,15 +195,25 @@ class Crossover:
 
     def two_point(self, parent_1, parent_2):
         separation_1 = randint(2, self.test.count_covering_objects - 3)
-        separation_2 = randint(separation_1, self.test.count_covering_objects - 3)
-        # new_chromosome_1 = parent_1[:separation] + parent_2[separation:]
-        # new_chromosome_2 = parent_2[:separation] + parent_1[separation:]
+        separation_2 = randint(separation_1, self.test.count_covering_objects - 2)
+        new_chromosome_1 = parent_1[:separation_1] + parent_2[separation_1:separation_2] + parent_1[separation_2:]
+        new_chromosome_2 = parent_2[:separation_1] + parent_1[separation_1:separation_2] + parent_2[separation_2:]
 
-        return
+        return [new_chromosome_1, new_chromosome_2]
 
     def uniform(self, parent_1, parent_2):
-        return
+        cost_1 = sum([a * b for a, b in zip(parent_1, self.test.covering_objects_costs)])
+        cost_2 = sum([a * b for a, b in zip(parent_2, self.test.covering_objects_costs)])
+        probability = cost_1 / (cost_1 + cost_2)
+        parents = [parent_1, parent_2]
+        new_chromosome_1 = [parents[random() < probability][i] for i in range(self.test.count_covering_objects)]
+        new_chromosome_2 = [parents[random() < probability][i] for i in range(self.test.count_covering_objects)]
 
-    def random(self,parent_1, parent_2):
-        return
+        return [new_chromosome_1, new_chromosome_2]
 
+    def random(self, parent_1, parent_2):
+        parents = [parent_1, parent_2]
+        new_chromosome_1 = [parents[randint(0, 1)][i] for i in range(self.test.count_covering_objects)]
+        new_chromosome_2 = [parents[randint(0, 1)][i] for i in range(self.test.count_covering_objects)]
+
+        return [new_chromosome_1, new_chromosome_2]

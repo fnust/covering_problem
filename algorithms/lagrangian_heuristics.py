@@ -1,4 +1,5 @@
 from tqdm import tqdm
+import math
 
 from services.generation import Test
 from services.visualization import Video, IMAGE_SIZE
@@ -41,7 +42,7 @@ class LagrangianHeuristics:
             set_covering_objects = self.find_solution()
             masks.append([(0, 1)[i in set_covering_objects] for i in range(self.test.count_covering_objects)])
             self.z_ub = min(self.z_ub, self.calculate_costs(set_covering_objects))
-            if self.z_max == self.z_ub:
+            if math.ceil(self.z_max) == self.z_ub:
                 break
             self.p = self.calculate_p(z_lb, coefficients)
             if consistency_of_result == 30:
