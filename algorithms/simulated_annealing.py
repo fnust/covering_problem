@@ -50,9 +50,39 @@ class SimulatedAnnealing:
 
     def __create_condition(self) -> None:
         condition = [randint(0, 1) for _ in range(self.test.count_covering_objects)]
-        while (position := self.__check_condition(condition)) >= 0:
-            condition[position] = 1
-        self.condition = condition
+        self.condition = self.fix_condition(condition)
+
+    def fix_condition(self, condition: list):
+        uncovered_objects = set()
+        columns_count_in_coverage = [0] * self.test.count_objects_to_be_covered
+        b: list[list[int]] = [[] for _ in range(self.test.count_covering_objects)]
+        a: list[list[int]] = [[] for _ in range(self.test.count_objects_to_be_covered)]
+
+        for i in range(self.test.count_objects_to_be_covered):
+            columns_count_in_coverage[i] = sum([x * y for x, y in zip(condition, self.test.coverage_array[i])])
+            if columns_count_in_coverage[i] == 0:
+                uncovered_objects.add(i)
+            for j in range(self.test.count_covering_objects):
+                if self.test.coverage_array[i][j] == 1:
+                    b[j].append(i)
+                    a[i].append(j)
+        while len(uncovered_objects) != 0:
+            i = list(uncovered_objects)[0]
+            j = sorted(a[i], key=lambda k: self.calculate_significance(k, uncovered_objects, b[k]))[0]
+            condition[j] = 1
+            for v in b[j]:
+                columns_count_in_coverage[v] += 1
+            uncovered_objects = uncovered_objects.difference(b[j])
+        for j in sorted([k for k in range(self.test.count_covering_objects) if condition[k] == 1],
+                        key=lambda x: -self.test.covering_objects_costs[x]):
+            if len([i for i in b[j] if columns_count_in_coverage[i] < 2]) == 0:
+                condition[j] = 0
+                for i in b[j]:
+                    columns_count_in_coverage[i] -= 1
+        return condition
+
+    def calculate_significance(self, k, uncovered_objects, j):
+        return self.test.covering_objects_costs[k] / len(uncovered_objects.intersection(j))
 
     def __check_condition(self, condition: list) -> int:
         for object_to_be_covered in self.test.coverage_array:
@@ -78,45 +108,7 @@ class SimulatedAnnealing:
             if probability < proportion[i]:
                 new_condition[i - 1] = 0
                 break
-        # if probability < 0.4:
-        #     objects = sorted(list(range(self.test.count_covering_objects)),
-        #                   key=lambda x: self.test.covering_objects_costs[x])[self.test.count_covering_objects // 2:]
-        #     position = choice(objects)
-        #     objects.remove(position)
-        #     while len(objects) != 0 and new_condition[position] == 1:
-        #         position = choice(objects)
-        #         objects.remove(position)
-        #
-        #     new_condition[position] = 0
-        # elif probability < 0.8:
-        #     objects = sorted(list(range(self.test.count_covering_objects)),
-        #                      key=lambda x: len([1 for i in self.test.coverage_array if i[x] == 1]))[
-        #               :self.test.count_covering_objects // 2]
-        #     position = choice(objects)
-        #     objects.remove(position)
-        #     while len(objects) != 0 and new_condition[position] == 1:
-        #         position = choice(objects)
-        #         objects.remove(position)
-        #
-        #     new_condition[position] = 0
-        # else:
-        #     objects = list(range(self.test.count_covering_objects))
-        #     position = choice(objects)
-        #     objects.remove(position)
-        #     while len(objects) != 0 and new_condition[position] == 0:
-        #         position = choice(objects)
-        #         objects.remove(position)
-
-        #     new_condition[position] = 0
-
-        # position_1 = randint(0, self.test.count_covering_objects - 1)
-        # position_2 = randint(0, self.test.count_covering_objects - 1)
-        # new_condition[position_1] = 1 - new_condition[position_1]
-        # new_condition[position_2] = 1 - new_condition[position_2]
-        while (position := self.__check_condition(new_condition)) >= 0:
-            new_condition[position] = 1
-
-        return new_condition
+        return self.fix_condition(new_condition)
 
     def __value_of_energy(self, condition: list) -> int:
         return sum([a * b for a, b in zip(condition, self.test.covering_objects_costs)])

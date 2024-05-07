@@ -81,13 +81,11 @@ class GeneticAlgorithm:
             genes = [randint(0, 1) for _ in range(self.test.count_covering_objects)]
             count_fines = 0
             if fine_amount == 0 or count >= count_of_not_allowable:
-                while (position := self.fix_chromosome(genes)) >= 0:
-                    genes[position] = 1
+                genes = self.__mutation(genes)
             else:
                 count += 1
                 if 1 not in genes:
-                    position = self.fix_chromosome(genes)
-                    genes[position] = 1
+                    genes = self.__mutation(genes)
                 count_fines = self.calculate_fine(genes)
             chromosome = Chromosome(genes, self.fitness_function(genes) - count_fines * fine_amount, count_fines == 0)
             chromosomes.add(chromosome)
@@ -106,13 +104,11 @@ class GeneticAlgorithm:
                 genes = self.__mutation(genes)
             count_fines = 0
             if fine_amount == 0 or count >= count_of_not_allowable:
-                while (position := self.fix_chromosome(genes)) >= 0:
-                    genes[position] = 1
+                genes = self.fix_chromosome(genes)
             else:
                 count += 1
                 if 1 not in genes:
-                    position = self.fix_chromosome(genes)
-                    genes[position] = 1
+                    genes = self.__mutation(genes)
                 count_fines = self.calculate_fine(genes)
             chromosome = Chromosome(genes, self.fitness_function(genes) - count_fines * fine_amount, count_fines == 0)
             chromosomes.add(chromosome)
@@ -123,11 +119,37 @@ class GeneticAlgorithm:
         genes[position] = 1 - genes[position]
         return genes
 
-    def fix_chromosome(self, genes: list):
-        for object_to_be_covered in self.test.coverage_array:
-            if 1 not in [a * b for a, b in zip(genes, object_to_be_covered)]:
-                return choice([i for i, v in enumerate(object_to_be_covered) if v == 1])
-        return -1
+    def fix_chromosome(self, chromosome: list):
+        uncovered_objects = set()
+        columns_count_in_coverage = [0] * self.test.count_objects_to_be_covered
+        b: list[list[int]] = [[] for _ in range(self.test.count_covering_objects)]
+        a: list[list[int]] = [[] for _ in range(self.test.count_objects_to_be_covered)]
+
+        for i in range(self.test.count_objects_to_be_covered):
+            columns_count_in_coverage[i] = sum([x * y for x, y in zip(chromosome, self.test.coverage_array[i])])
+            if columns_count_in_coverage[i] == 0:
+                uncovered_objects.add(i)
+            for j in range(self.test.count_covering_objects):
+                if self.test.coverage_array[i][j] == 1:
+                    b[j].append(i)
+                    a[i].append(j)
+        while len(uncovered_objects) != 0:
+            i = list(uncovered_objects)[0]
+            j = sorted(a[i], key=lambda k: self.calculate_significance(k, uncovered_objects, b[k]))[0]
+            chromosome[j] = 1
+            for v in b[j]:
+                columns_count_in_coverage[v] += 1
+            uncovered_objects = uncovered_objects.difference(b[j])
+        for j in sorted([k for k in range(self.test.count_covering_objects) if chromosome[k] == 1],
+                        key=lambda x: -self.test.covering_objects_costs[x]):
+            if len([i for i in b[j] if columns_count_in_coverage[i] < 2]) == 0:
+                chromosome[j] = 0
+                for i in b[j]:
+                    columns_count_in_coverage[i] -= 1
+        return chromosome
+
+    def calculate_significance(self, k, uncovered_objects, j):
+        return self.test.covering_objects_costs[k] / len(uncovered_objects.intersection(j))
 
     def calculate_fine(self, genes: list):
         count_fines = 0
