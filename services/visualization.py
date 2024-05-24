@@ -32,7 +32,8 @@ class VisualizeMap:
     def __visualize_ranges(self, map_image: Image, indexes: list[int]) -> None:
         circle = Image.new('RGBA',
                            size=(
-                           2 * self.test.radius * self.sprite_size + 1, 2 * self.test.radius * self.sprite_size + 1),
+                               2 * self.test.radius * self.sprite_size + 1,
+                               2 * self.test.radius * self.sprite_size + 1),
                            color=(0, 0, 0, 0))
         draw_circle = ImageDraw.Draw(circle)
 
@@ -69,6 +70,8 @@ class Video(VisualizeMap):
     def create_video(self, masks: list[list[int]], file_name: str) -> None:
         frames = []
         test_name = f'test_{self.test.count_objects_to_be_covered}_{self.test.count_covering_objects}_{self.test.radius}'
+        masks = masks[:masks.index(
+            min(masks, key=lambda x: sum([a * b for a, b in zip(x, self.test.covering_objects_costs)]))) + 1]
         for mask in masks:
             frames.append(self.save_image(mask))
         path = DirectoryCreator().new_directory('videos', test_name)

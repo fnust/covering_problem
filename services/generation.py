@@ -1,5 +1,4 @@
 from random import randint
-
 from services.common import DirectoryCreator
 
 MAP_SIZE = 100
@@ -18,8 +17,10 @@ class Test:
         self.covering_objects = []
         self.coverage_array = [[]]
         self.covering_objects_costs = []
+        self.covering_columns = [[]]
+        self.rows_to_be_covered = [[]]
 
-    def load(self, file: str) -> None:
+    def load_generated_data(self, file: str) -> None:
         with open(file, 'r') as f:
             lines = f.readlines()
             self.count_objects_to_be_covered, self.count_covering_objects, self.radius, self.map_size = map(int, lines[
@@ -32,6 +33,40 @@ class Test:
             begin = end
             end = begin + self.count_covering_objects
             self.covering_objects = [tuple(map(int, x.split())) for x in lines[begin:end:]]
+
+            self.covering_columns: list[list[int]] = [[] for _ in range(self.count_objects_to_be_covered)]
+            self.rows_to_be_covered: list[list[int]] = [[] for _ in range(self.count_covering_objects)]
+            for i in range(self.count_objects_to_be_covered):
+                for j in range(self.count_covering_objects):
+                    if self.coverage_array[i][j] == 1:
+                        self.covering_columns[i].append(j)
+                        self.rows_to_be_covered[j].append(i)
+
+    def load_or_library_data(self, file: str) -> None:
+        with open(file, 'r') as f:
+            lines = f.readlines()
+            self.count_objects_to_be_covered, self.count_covering_objects = map(int, lines[0].split())
+            self.covering_objects_costs = []
+            line = 1
+            while len(self.covering_objects_costs) != self.count_covering_objects:
+                self.covering_objects_costs += list(map(int, lines[line].split()))
+                line += 1
+            self.coverage_array = [[0] * self.count_covering_objects for _ in range(self.count_objects_to_be_covered)]
+            i = 0
+            self.covering_columns: list[list[int]] = []
+            self.rows_to_be_covered: list[list[int]] = [[] for _ in range(self.count_covering_objects)]
+            while i != self.count_objects_to_be_covered:
+                count = int(lines[line])
+                line += 1
+                columns = []
+                while len(columns) != count:
+                    columns += list(map(lambda x: int(x) - 1, lines[line].split()))
+                    line += 1
+                self.covering_columns.append(columns)
+                for j in columns:
+                    self.rows_to_be_covered[j].append(i)
+                    self.coverage_array[i][j] = 1
+                i += 1
 
     def save_data(self) -> None:
         DirectoryCreator()
@@ -50,7 +85,8 @@ class Test:
 
 
 class GenerateMap(Test):
-    def __init__(self, map_size: int, count_objects_to_be_covered: int, count_covering_objects: int, radius: int):
+    def __init__(self, map_size: int, count_objects_to_be_covered: int, count_covering_objects: int,
+                 radius: int) -> None:
         super().__init__(map_size)
         self.__map = [[0] * map_size for _ in range(map_size)]
         self.__generate_objects_to_be_covered(count_objects_to_be_covered)
